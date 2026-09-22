@@ -4,7 +4,8 @@ on:
   push:
     branches: [ v2-bootstrap ]
     paths:
-      - chinese_hsk_v2_bootstrap.zip
+      - chinese_hsk_v2_source.tar.xz
+      - .github/workflows/bootstrap-v2.yml
   workflow_dispatch:
 
 permissions:
@@ -27,27 +28,24 @@ jobs:
           ref: v2-bootstrap
           fetch-depth: 0
 
-      - name: Verify transfer package
-        run: |
-          test -f chinese_hsk_v2_bootstrap.zip
-          unzip -t chinese_hsk_v2_bootstrap.zip >/dev/null
-          echo "Bootstrap ZIP verified."
-
-      - name: Replace legacy working tree with v2 source
+      - name: Verify v2 source package
         shell: bash
         run: |
+          test -f chinese_hsk_v2_source.tar.xz
+          echo "5faf926f5d5010ecd1ba6dceef0ee3474aabe78076685f4f1a7c63aa076c03b1  chinese_hsk_v2_source.tar.xz" | sha256sum -c -
+          xz -t chinese_hsk_v2_source.tar.xz
+
+      - name: Expand clean v2 source
+        shell: bash
+        run: |
+          rm -rf /tmp/chinese-hsk-v2-clean
           mkdir -p /tmp/chinese-hsk-v2-clean
-          unzip -q chinese_hsk_v2_bootstrap.zip -d /tmp/chinese-hsk-v2-clean
+          tar -xJf chinese_hsk_v2_source.tar.xz -C /tmp/chinese-hsk-v2-clean
+          test -f /tmp/chinese-hsk-v2-clean/VERSION
+          test "$(tr -d '\r\n' < /tmp/chinese-hsk-v2-clean/VERSION)" = "2.0.0"
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a /tmp/chinese-hsk-v2-clean/. .
-          test -f VERSION
-          test "$(cat VERSION | tr -d '\r\n')" = "2.0.0"
-
-      - name: Preserve clean v2 source
-        run: |
-          mkdir -p /tmp/chinese-hsk-v2-source
-          cp -a . /tmp/chinese-hsk-v2-source/
-          rm -rf /tmp/chinese-hsk-v2-source/.git
+          echo "Expanded Chinese HSK v2.0.0 source."
 
       - name: Setup Java 17
         uses: actions/setup-java@v6
@@ -66,17 +64,36 @@ jobs:
           yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platforms;android-37" "build-tools;36.0.0"
 
-      - name: Generate and validate course content
+      - name: Compile authoring content
+        run: python3 scripts/compile_authoring.py
+
+      - name: Build media catalogs
+        run: python3 scripts/build_media_catalog.py
+
+      - name: Install Python image tooling
+        run: python3 -m pip install --disable-pip-version-check "Pillow>=12,<13"
+
+      - name: Build visual catalog
         run: |
-          python3 scripts/compile_authoring.py
-          python3 scripts/build_media_catalog.py
           python3 scripts/build_visual_bible.py
           python3 scripts/build_visual_asset_queue.py
+          python3 scripts/prepare_visual_assets.py
           python3 scripts/validate_visual_assets.py
           python3 scripts/validate_visual_runtime_mapping.py
+          python3 scripts/validate_visual_binaries.py
+
+      - name: Install audio tooling
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Build audio catalog
+        run: |
           python3 scripts/build_audio_asset_queue.py
+          python3 scripts/prepare_audio_assets.py
           python3 scripts/validate_audio_assets.py
           python3 scripts/build_media_readiness_report.py
+
+      - name: Strict course validation
+        run: |
           python3 scripts/validate_content.py --strict
           python3 scripts/audit_content_quality.py
           python3 scripts/validate_app_flow.py
@@ -98,8 +115,11 @@ jobs:
       - name: Commit clean v2 source to bootstrap branch
         shell: bash
         run: |
+          rm -rf /tmp/chinese-hsk-v2-built
+          mkdir -p /tmp/chinese-hsk-v2-built
+          cp -a /tmp/chinese-hsk-v2-clean/. /tmp/chinese-hsk-v2-built/
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
-          cp -a /tmp/chinese-hsk-v2-source/. .
+          cp -a /tmp/chinese-hsk-v2-built/. .
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
@@ -110,6 +130,6 @@ jobs:
         if: always()
         run: |
           echo "## Chinese HSK v2 bootstrap" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Source version: 2.0.0" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Target branch: v2-bootstrap" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source package SHA-256 verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Course target: 300 scenes / 30,000 dialogues" >> "$GITHUB_STEP_SUMMARY"
           echo "- APK artifact: ChineseHSK-v2.0.0-personal-apk" >> "$GITHUB_STEP_SUMMARY"
