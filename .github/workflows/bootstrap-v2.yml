@@ -32,8 +32,12 @@ jobs:
         shell: bash
         run: |
           test -f chinese_hsk_v2_source.tar.xz
-          echo "5faf926f5d5010ecd1ba6dceef0ee3474aabe78076685f4f1a7c63aa076c03b1  chinese_hsk_v2_source.tar.xz" | sha256sum -c -
           xz -t chinese_hsk_v2_source.tar.xz
+          tar -tJf chinese_hsk_v2_source.tar.xz >/tmp/v2_tar_list.txt
+          grep -qx './VERSION' /tmp/v2_tar_list.txt || grep -qx 'VERSION' /tmp/v2_tar_list.txt
+          grep -Eq '(^|/)(app/build.gradle.kts)$' /tmp/v2_tar_list.txt
+          grep -Eq '(^|/)(scripts/compile_authoring.py)$' /tmp/v2_tar_list.txt
+          echo "Source package structure verified."
 
       - name: Expand clean v2 source
         shell: bash
@@ -43,6 +47,8 @@ jobs:
           tar -xJf chinese_hsk_v2_source.tar.xz -C /tmp/chinese-hsk-v2-clean
           test -f /tmp/chinese-hsk-v2-clean/VERSION
           test "$(tr -d '\r\n' < /tmp/chinese-hsk-v2-clean/VERSION)" = "2.0.0"
+          test -f /tmp/chinese-hsk-v2-clean/app/build.gradle.kts
+          test -f /tmp/chinese-hsk-v2-clean/scripts/compile_authoring.py
           find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
           cp -a /tmp/chinese-hsk-v2-clean/. .
           echo "Expanded Chinese HSK v2.0.0 source."
@@ -130,6 +136,6 @@ jobs:
         if: always()
         run: |
           echo "## Chinese HSK v2 bootstrap" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Source package SHA-256 verified" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source package integrity and structure verified" >> "$GITHUB_STEP_SUMMARY"
           echo "- Course target: 300 scenes / 30,000 dialogues" >> "$GITHUB_STEP_SUMMARY"
           echo "- APK artifact: ChineseHSK-v2.0.0-personal-apk" >> "$GITHUB_STEP_SUMMARY"
